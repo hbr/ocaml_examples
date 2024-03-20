@@ -4,9 +4,9 @@
 
 
 (*
-    ============================================================
-    Basics
-    ============================================================
+================================================================================
+Basics
+================================================================================
 *)
 
 module String_map =
@@ -17,6 +17,7 @@ module Int_map =
   Fmlib_std.Btree.Map (Int)
 
 
+
 module Option =
 struct
   include Fmlib_std.Option
@@ -24,7 +25,16 @@ struct
 
   let (>=>) (fab: 'a -> 'b t) (fbc: 'b -> 'c t): ('a -> 'c t) =
     fun a -> fab a >>= fbc
+
+
+  let lift (f: 'a t -> 'b t): 'a t t -> 'b t t = function
+    | None ->
+      Some (f None)
+
+    | Some a ->
+      Some (f a)
 end
+
 
 
 type 'a upd =
@@ -36,7 +46,8 @@ type 'a xt =
 
 
 let (>.>) (f: 'a -> 'b) (g: 'b -> 'c): 'a -> 'c =
-  fun a -> a |> f |> g
+  (* (f >.> g) x  =  g (f x) *)
+  fun x -> g (f x)
 
 
 let (>=>) = Option.(>=>)
@@ -44,6 +55,8 @@ let (>=>) = Option.(>=>)
 
 let omap = Option.map
 
+
+let lift = Option.lift
 
 
 let de_bruijn (n: int): int upd =
@@ -57,9 +70,9 @@ let de_bruijn (n: int): int upd =
 
 
 (*
-    ============================================================
-    Triemap with Terms with Variables and Applications
-    ============================================================
+================================================================================
+Triemap with Terms with Variables and Applications
+================================================================================
 *)
 module Simple =
 struct
@@ -117,15 +130,6 @@ struct
         Some {n with apps = f n.apps}
 
 
-    let lift (f: 'a t upd): 'a t xt =
-      function
-      | None ->
-        Some (f empty)
-
-      | Some n ->
-        Some (f n)
-
-
     let rec find_opt: type a. Expr.t -> a t -> a option =
       function
       | Var s ->
@@ -155,9 +159,9 @@ end
 
 
 (*
-    ============================================================
-    Triemap with Terms with Binders
-    ============================================================
+================================================================================
+Triemap with Terms with Binders
+================================================================================
 *)
 module With_binders =
 struct
@@ -241,15 +245,6 @@ struct
         Some {n with lams = f n.lams}
 
 
-    let lift (f: 'a t upd): 'a t xt =
-      function
-      | None ->
-        Some (f empty)
-
-      | Some n ->
-        Some (f n)
-
-
     let rec find_opt: type a. Term.t -> a t -> a option =
       function
       | Var i ->
@@ -317,3 +312,98 @@ struct
       check
   end
 end
+
+
+
+
+
+
+
+
+
+
+(*
+================================================================================
+Triemap with Matching
+================================================================================
+*)
+
+module Simple_match =
+struct
+  module Term =
+  struct
+    type t =
+      | Var of int
+      | App of t * t
+  end
+
+
+  type key = int * Term.t (* number of pattern variables, term
+                             all variables above n are free variables *)
+
+
+  module TMap =
+  struct
+    type 'a t
+
+    let find: type a. Term.t -> a t -> (Term.t Int_map.t * a) list =
+      function
+      | Var _ ->
+        assert false
+
+      | App (_, _) ->
+        assert false
+  end
+end
+
+
+
+
+
+
+
+
+
+
+(*
+================================================================================
+Proofs
+================================================================================
+*)
+
+
+(* Composition
+================================================================================
+
+    1. The composition operator is associative
+
+        (f >.> g) >.> h   =   f >.> (g >.> h)
+
+
+        Proof
+
+            ((f >.> g) >.> h) x   =   (h >.> g) (f x)
+                                  =   h (g (f x))
+
+            (f >.> (g >.> h)) x   =  h ((g >.> f) x)
+                                  =  h (g (f x))
+
+
+    2. Kleisli composition does not associate with composition
+
+        Note: h has to map the monad i.e. h: 'x m -> 'y m
+
+        Counterexample: Consider
+
+            (f >=> g) >.> h
+
+        [f x] might return [None]. [g] is not executed and [None] is fed
+        directly into [h] which might return something different from [None].
+
+        Now consider
+
+            f >=> (g >.> h)
+
+        If [f x] returns [None], the complete result is [None] and [h] is not
+        used.
+*)
