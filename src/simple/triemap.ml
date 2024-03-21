@@ -146,6 +146,14 @@ struct
 
       | App (f, a) ->
         update a >.> lift >.> update f >.> update_apps
+
+
+    (* just for type checking *)
+    let lhs (e: Expr.t) (xt: 'a xt): 'a t -> 'a option =
+      update e xt >.> find_opt e
+
+    let rhs (e: Expr.t) (xt: 'a xt): 'a t -> 'a option =
+      find_opt e >.> xt
   end
 end
 
@@ -406,4 +414,159 @@ Proofs
 
         If [f x] returns [None], the complete result is [None] and [h] is not
         used.
+
+
+    3. Function compositioin associates with Kleisli composition
+
+            f >.> (g >=> h)  =  (f >.> g) >=> h
+
+        Proof
+
+            (f >.> (g >=> h)) x  =  (g >=> h) (f x)
+                                 =  g (f x) >>= h
+
+            ((f >.> g) >=> h) x  =  (f >.> g) x >>= h
+                                 =  g (f x) >>= h
+*)
+
+
+(* Correctness of [find] and [update]
+================================================================================
+
+    We use the simple triemap with variables and applications.
+
+    We want to prove that an update operation followed by a find returns the
+    expected result
+
+        upd e xt >.> fnd e   =   fnd e >.> xt
+
+    and assume the correctness of the string map
+
+        SM.(upd s xt >.> fnd s)   =   SM.(fnd s >.> xt)
+
+
+    Proof by induction on the structure of [e]:
+
+
+    1. Base case [e = Var s]
+
+
+        Left hand side:
+
+        (upd (Var s) xt >.> fnd e) m
+
+            | definition of (>.>)
+
+        = fnd (Var s) (upd (Var s) xt m)
+
+            | definition of [upd]
+
+        = fnd (Var s) (upd_vars (SM.upd s xt) m)
+
+            | definition of [fnd]
+
+        = omap vars (upd_vars (SM.upd s xt) m) >>= SM.find s
+
+            |    omap vars (upd_vars (SM.upd s xt) m
+            |    = Some(SM.upd s xt sm)
+            |
+            | where sm is either the empty string map or the string map within
+            | m
+
+        = SM.(upd s xt >.> find s) sm
+
+            | Correctness of string map
+
+        = SM.(find s >.> xt) sm
+
+
+        Right hand side
+
+        (fnd (Var s) >.> xt) m
+
+            | definition of [fnd]
+
+        = (omap vars >=> SM.find s >.> xt) m
+
+            | definition Kleisi composition
+
+        = xt (omap vars m >>= SM.find s)
+
+            | If [m] is empty then we get [xt None]
+            | Otherwise we get [xt (SM.find s sm)]
+            | In both case the result can be represented by
+
+        = SM.(fnd s >.> xt) sm
+
+            | where [sm] is either empty for empty [m] or the string map of [m].
+
+
+
+    2. Inductive case [e = App (f, a)]
+
+
+        Left hand side:
+
+        (upd (App (f, a)) xt >.> fnd (App (f, a)) m
+
+            | definition [upd, fnd]
+
+        = ((upd a >.> lift >.> upd f >.> upd_apps) xt
+           >.> (map apps >=> fnd f >=> fnd a)) m
+
+            | xt' := lift (upd a xt)
+            | composition associates with Kleisli composition
+
+        = ((upd f >.> upd_apps) xt' >.> map apps >=> fnd f) m >>= fnd a
+
+            | definition Kleisli composition and function composition
+
+        = map apps (upd_apps (upd f xt')) m >>= fnd f >>= fnd a
+
+            | [af] is either [None] if [m] is [None] or the apps field of [m]
+
+        = Some (upd f xt' af) >>= fnd f >>= fnd a
+
+            | definition of (>>=)
+
+        = fnd f (upd f xt' af) >>= fnd a
+
+            | definition of composition
+
+        = (upd f xt' >.> fnd f) af >>= fnd a
+
+            | induction hypothesis of [f]
+
+        = (fnd f >.> xt') af >>= fnd a
+
+            | defintion xt'
+
+        = lift (upd a xt) (fnd f af) >>= fnd a
+
+            | definition of [lift]
+
+        = Some (upd a xt (fnd f af)) >>= fnd a
+
+            | definition of (>>=)
+
+        = fnd a (upd a xt (fnd f af))
+
+            | induction hypothesis of [a]
+
+        = xt (fnd a (fnd f af))
+
+
+
+        Right hand side:
+
+        (fnd (App (f, a)) >.> xt) m
+
+        = ((omap apps >=> fnd f >=> fnd a) >.> xt) m
+
+        = xt (fnd f af >>= fnd a)
+
+
+
+        PROBLEM: lhs and rhs are not exactly the same. lhs has one level of
+        option less!!!
 *)
