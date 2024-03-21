@@ -104,39 +104,39 @@ struct
       {vars = String_map.empty; apps = None}
 
 
-    let vars (n: 'a t1): 'a String_map.t =
-      n.vars
+    let vars (m: 'a t): 'a String_map.t option =
+      Option.map (fun n -> n.vars) m
 
 
-    let apps (n: 'a t1): 'a t t =
-      n.apps
+    let apps (m: 'a t): 'a t t option =
+      Option.map (fun n -> n.apps) m
 
 
-    let update_vars (f: 'a String_map.t upd): 'a t upd =
+    let update_vars (xt: 'a String_map.t upd): 'a t upd =
       function
       | None ->
-        Some {empty1 with vars = f String_map.empty}
+        Some {empty1 with vars = xt String_map.empty}
 
       | Some n ->
-        Some {n with vars = f n.vars}
+        Some {n with vars = xt n.vars}
 
 
-    let update_apps (f: 'a t t upd): 'a t upd =
+    let update_apps (xt: 'a t t upd): 'a t upd =
       function
       | None ->
-        Some {empty1 with apps = f None}
+        Some {empty1 with apps = xt None}
 
       | Some n ->
-        Some {n with apps = f n.apps}
+        Some {n with apps = xt n.apps}
 
 
     let rec find_opt: type a. Expr.t -> a t -> a option =
       function
       | Var s ->
-        omap vars >=> String_map.find_opt s
+        vars >=> String_map.find_opt s
 
       | App (f, a) ->
-        omap apps >=> find_opt f >=> find_opt a
+        apps >=> find_opt f >=> find_opt a
 
 
     let rec update: type a.  Expr.t -> a xt -> a t upd =
@@ -214,16 +214,16 @@ struct
       { vars = Int_map.empty; apps = empty; lams = empty }
 
 
-    let vars (n: 'a t1): 'a Int_map.t =
-      n.vars
+    let vars (m: 'a t):  'a Int_map.t option=
+      Option.map (fun n -> n.vars) m
 
 
-    let apps (n: 'a t1): 'a t t =
-      n.apps
+    let apps (m: 'a t): 'a t t option =
+      Option.map (fun n -> n.apps) m
 
 
-    let lams (n: 'a t1): 'a t =
-      n.lams
+    let lams (m: 'a t): 'a t option =
+      Option.map (fun n -> n.lams) m
 
 
     let update_vars (f: 'a Int_map.t upd): 'a t upd =
@@ -256,13 +256,13 @@ struct
     let rec find_opt: type a. Term.t -> a t -> a option =
       function
       | Var i ->
-        omap vars >=> Int_map.find_opt i
+        vars >=> Int_map.find_opt i
 
       | App (f, a) ->
-        omap apps >=> find_opt f >=> find_opt a
+        apps >=> find_opt f >=> find_opt a
 
       | Lam t ->
-        omap lams >=> find_opt t
+        lams >=> find_opt t
 
 
     let rec update: type a. Term.t -> a xt -> a t upd =
