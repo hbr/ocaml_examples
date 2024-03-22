@@ -17,6 +17,10 @@ module Int_map =
   Fmlib_std.Btree.Map (Int)
 
 
+module Unit_map =
+  Fmlib_std.Btree.Map (Unit)
+
+
 
 module Option =
 struct
@@ -200,76 +204,83 @@ struct
   end
 
 
+
   module TMap =
   struct
     type 'a t =
-      'a t1 option
-
-    and 'a t1 =
       {
         vars: 'a Int_map.t;
-        apps:  'a t t;
-        lams:  'a t;
+        apps:  'a t t Unit_map.t;
+        lams:  'a t Unit_map.t;
       }
 
 
     let empty: 'a t =
-      None
+      {
+        vars = Int_map.empty;
+        apps = Unit_map.empty;
+        lams = Unit_map.empty
+      }
 
 
-    let empty1: 'a t1 =
-      { vars = Int_map.empty; apps = empty; lams = empty }
+    let is_empty (m: 'a t): bool =
+      Int_map.is_empty m.vars
+      &&
+      Unit_map.is_empty m.apps
+      &&
+      Unit_map.is_empty m.lams
 
 
-    let vars (m: 'a t):  'a Int_map.t option=
-      Option.map (fun n -> n.vars) m
+    let vars (m: 'a t):  'a Int_map.t =
+      m.vars
 
 
-    let apps (m: 'a t): 'a t t option =
-      Option.map (fun n -> n.apps) m
+    let apps (m: 'a t): 'a t t Unit_map.t =
+      m.apps
 
 
-    let lams (m: 'a t): 'a t option =
-      Option.map (fun n -> n.lams) m
+    let lams (m: 'a t): 'a t Unit_map.t =
+      m.lams
 
 
-    let update_vars (f: 'a Int_map.t upd): 'a t upd =
+    let update_vars (xt: 'a Int_map.t upd): 'a t upd =
+      fun m -> {m with vars = xt m.vars}
+
+
+    let update_apps (xt: 'a t t Unit_map.t upd): 'a t upd =
+      fun m -> {m with apps = xt m.apps}
+
+
+    let update_lams (xt: 'a t Unit_map.t upd): 'a t upd =
+      fun m -> {m with lams = xt m.lams}
+
+
+    let to_option (m: 'a t): 'a t option =
+      if is_empty m then
+        None
+      else
+        Some m
+
+
+    let lift (xt: 'a t upd): 'a t xt =
       function
       | None ->
-        Some {empty1 with vars = f Int_map.empty}
+        xt empty |> to_option
 
-      | Some n ->
-        Some {n with vars = f n.vars}
-
-
-    let update_apps (f: 'a t t upd): 'a t upd =
-      function
-      | None ->
-        Some {empty1 with apps = f empty}
-
-      | Some n ->
-        Some {n with apps = f n.apps}
-
-
-    let update_lams (f: 'a t upd): 'a t upd =
-      function
-      | None ->
-        Some {empty1 with lams = f empty}
-
-      | Some n ->
-        Some {n with lams = f n.lams}
+      | Some m ->
+        xt m |> to_option
 
 
     let rec find_opt: type a. Term.t -> a t -> a option =
       function
       | Var i ->
-        vars >=> Int_map.find_opt i
+        vars >.> Int_map.find_opt i
 
       | App (f, a) ->
-        apps >=> find_opt f >=> find_opt a
+        apps >.> Unit_map.find_opt () >=> find_opt f >=> find_opt a
 
       | Lam t ->
-        lams >=> find_opt t
+        lams >.> Unit_map.find_opt () >=> find_opt t
 
 
     let rec update: type a. Term.t -> a xt -> a t upd =
@@ -278,10 +289,16 @@ struct
         Int_map.update i >.> update_vars
 
       | App (f, a) ->
-        update a >.> lift >.> update f >.> update_apps
+        update a >.> lift
+        >.>
+        update f >.> lift
+        >.>
+        Unit_map.update ()
+        >.>
+        update_apps
 
       | Lam t ->
-        update t >.> update_lams
+        update t >.> lift >.> Unit_map.update () >.> update_lams
 
 
     let insert (t: Term.t) (v: 'a): 'a t -> 'a t =
