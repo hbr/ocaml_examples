@@ -145,7 +145,12 @@ struct
         String_map.update s >.> update_vars
 
       | App (f, a) ->
-        update a >.> lift >.> update f >.> update_apps
+        (* update a >.> lift >.> update f >.> update_apps *)
+        fun xt ->
+          let xt1 = lift (update a xt) (* [xt1] inserts or modifies,
+                                          never deletes *)
+          in
+          update_apps (update f xt1)
 
 
     (* just for type checking *)
@@ -180,6 +185,8 @@ struct
       | App of t * t
       | Lam of t
 
+
+    (* Some example terms: *)
 
     let lam_true: t =
       Lam (Lam (Var 1))
@@ -352,9 +359,36 @@ struct
 
   module TMap =
   struct
-    type 'a t
+    type subs =
+      Term.t Int_map.t
 
-    let find: type a. Term.t -> a t -> (Term.t Int_map.t * a) list =
+
+    type 'a t =
+      'a t1 option
+
+    and 'a t1 = {
+      pvars: 'a Int_map.t;
+      vars:  'a Int_map.t;
+      apps:  'a t t;
+    }
+
+
+    let pvars: 'a t -> 'a Int_map.t option =
+      fun m ->
+      Option.map (fun n -> n.pvars) m
+
+
+    let vars: 'a t -> 'a Int_map.t option =
+      fun m ->
+      Option.map (fun n -> n.vars) m
+
+
+    let apps: 'a t -> 'a t t option =
+      fun m ->
+      Option.map (fun n -> n.apps) m
+
+
+    let find: type a. Term.t -> a t -> (subs * a) list =
       function
       | Var _ ->
         assert false
@@ -365,6 +399,37 @@ struct
 end
 
 
+
+
+
+
+
+
+
+
+
+(*
+================================================================================
+Triemap with General Trees
+================================================================================
+*)
+
+module type TREE =
+sig
+  type info
+
+  type 'a t
+
+  val info: t -> info
+
+  val nchildren: t -> int
+
+  val child: int -> t -> t
+end
+
+module General_tree (T: TREE) =
+struct
+end
 
 
 
