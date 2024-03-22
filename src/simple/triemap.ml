@@ -87,53 +87,58 @@ struct
   module Expr_map =
   struct
     type 'a t =
-      'a t1 option
-
-    and  'a t1 =
       {
         vars: 'a String_map.t;
-        apps: 'a t t
+        apps: 'a t t option
       }
 
 
     let empty: 'a t =
-      None
-
-
-    let empty1: 'a t1 =
       {vars = String_map.empty; apps = None}
 
 
-    let vars (m: 'a t): 'a String_map.t option =
-      Option.map (fun n -> n.vars) m
+    let is_empty (m: 'a t): bool =
+      String_map.is_empty m.vars
+      &&
+      m.apps = None
+
+
+    let vars (m: 'a t): 'a String_map.t =
+      m.vars
 
 
     let apps (m: 'a t): 'a t t option =
-      Option.map (fun n -> n.apps) m
+      m.apps
 
 
     let update_vars (xt: 'a String_map.t upd): 'a t upd =
+      fun m -> {m with vars = xt m.vars}
+
+
+    let update_apps (xt: 'a t t xt): 'a t upd =
+      fun m -> {m with apps = xt m.apps}
+
+
+    let to_option (m: 'a t): 'a t option =
+      if is_empty m then
+        None
+      else
+        Some m
+
+
+    let lift (xt: 'a t upd): 'a t xt =
       function
       | None ->
-        Some {empty1 with vars = xt String_map.empty}
+        xt empty |> to_option
 
-      | Some n ->
-        Some {n with vars = xt n.vars}
-
-
-    let update_apps (xt: 'a t t upd): 'a t upd =
-      function
-      | None ->
-        Some {empty1 with apps = xt None}
-
-      | Some n ->
-        Some {n with apps = xt n.apps}
+      | Some m ->
+        xt m |> to_option
 
 
     let rec find_opt: type a. Expr.t -> a t -> a option =
       function
       | Var s ->
-        vars >=> String_map.find_opt s
+        vars >.> String_map.find_opt s
 
       | App (f, a) ->
         apps >=> find_opt f >=> find_opt a
@@ -145,12 +150,7 @@ struct
         String_map.update s >.> update_vars
 
       | App (f, a) ->
-        (* update a >.> lift >.> update f >.> update_apps *)
-        fun xt ->
-          let xt1 = lift (update a xt) (* [xt1] inserts or modifies,
-                                          never deletes *)
-          in
-          update_apps (update f xt1)
+        update a >.> lift >.> update f >.> lift >.> update_apps
 
 
     (* just for type checking *)
@@ -418,7 +418,7 @@ module type TREE =
 sig
   type info
 
-  type 'a t
+  type t
 
   val info: t -> info
 
