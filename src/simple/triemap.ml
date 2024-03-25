@@ -9,6 +9,9 @@ Basics
 ================================================================================
 *)
 
+module type ANY = Fmlib_std.Interfaces.ANY
+
+
 module String_map =
   Fmlib_std.Btree.Map (String)
 
@@ -21,6 +24,9 @@ module Unit_map =
   Fmlib_std.Btree.Map (Unit)
 
 
+module Array =
+  Fmlib_std.Array
+
 
 module Option =
 struct
@@ -31,14 +37,47 @@ struct
     fun a -> fab a >>= fbc
 
 
-  let lift (f: 'a t -> 'b t): 'a t t -> 'b t t = function
+  let get: 'a option -> 'a =
+    function
     | None ->
-      Some (f None)
+      assert false (* Illegal call *)
 
     | Some a ->
-      Some (f a)
+      a
+
+  let to_list: 'a option -> 'a list =
+    function
+    | None   -> []
+    | Some a -> [a]
 end
 
+
+
+module StateM (S: ANY) =
+struct
+  type 'a t =
+    S.t -> 'a * S.t
+
+
+  let return: 'a -> 'a t =
+    fun a s -> (a, s)
+
+
+  let bind (m: 'a t) (f: 'a -> 'b t): 'b t =
+    fun s ->
+    let a, s = m s in
+    f a s
+
+
+  let (>>=) = bind
+
+
+  let ( let* ) = bind
+
+
+  let run (s: S.t) (m: 'a t): 'a * S.t =
+    m s
+end
 
 
 type 'a upd =
@@ -59,8 +98,6 @@ let (>=>) = Option.(>=>)
 
 let omap = Option.map
 
-
-let lift = Option.lift
 
 
 let de_bruijn (n: int): int upd =
@@ -365,8 +402,8 @@ struct
   module Term =
   struct
     type t =
-      | Var of int
-      | App of t * t
+      | Var  of int
+      | App  of t * t
   end
 
 
@@ -376,36 +413,105 @@ struct
 
   module TMap =
   struct
-    type subs =
-      Term.t Int_map.t
+    type keysub = Term.t array
+
+
+    type 'a sub = (int * Term.t) list * 'a
+
+
+    type var_keys = (int * int) list (* pairs of variables and keys *)
+
+
+    type 'a cont = var_keys * 'a (* content with var/keys correspondence *)
 
 
     type 'a t =
-      'a t1 option
+      {
+        pvar0: 'a cont option;   (* first occurrence of a new pattern var *)
+        pvar1: 'a cont Int_map.t;(* repeated occurrence of a pattern var  *)
+        vars:  'a cont Int_map.t;
+        apps:  'a t t option;
+      }
 
-    and 'a t1 = {
-      pvars: 'a Int_map.t;
-      vars:  'a Int_map.t;
-      apps:  'a t t;
+
+    let empty: 'a t = {
+      pvar0 = None;
+      pvar1 = Int_map.empty;
+      vars  = Int_map.empty;
+      apps  = None
     }
 
 
-    let pvars: 'a t -> 'a Int_map.t option =
-      fun m ->
-      Option.map (fun n -> n.pvars) m
+    let is_empty (m: 'a t): bool =
+      m.pvar0 = None
+      &&
+      Int_map.is_empty m.pvar1
+      &&
+      Int_map.is_empty m.vars
+      &&
+      m.apps = None
 
 
-    let vars: 'a t -> 'a Int_map.t option =
-      fun m ->
-      Option.map (fun n -> n.vars) m
+    let rec find0: type a. Term.t -> keysub -> a t -> (keysub * a cont) list =
+      fun e ks m ->
+      let lst0 =
+        (* Terms in the map which have a first ocurrence of a pattern variable
+           here. *)
+        Option.(
+          map
+            (fun cont -> Array.push e ks, cont)
+            m.pvar0
+          |> to_list
+        )
+
+      and lst1 =
+        (* Terms as keys in the map which have a repeated occurrence of a
+           pattern variable here. *)
+        List.filter_map
+          (fun (i, cont) ->
+             assert (i < Array.length ks);
+             if ks.(i) = e then
+               Some (ks, cont)
+             else
+               None
+          )
+          (Int_map.bindings m.pvar1)
+
+      and look_at: Term.t -> (keysub * a cont) list =
+        function
+        | Var i ->
+          Option.(
+            map
+              (fun cont -> ks, cont)
+              (Int_map.find_opt i m.vars)
+            |> to_list
+          )
+
+        | App (f, a) ->
+          Option.(
+            map
+              (fun fm ->
+                 List.(
+                   concat_map
+                     (fun (ks, (vks1, am)) ->
+                        map
+                          (fun (ks, (vks2, v)) ->
+                             ks, (vks1 @ vks2, v)
+                          )
+                          (find0 a ks am)
+                     )
+                     (find0 f ks fm)
+                 )
+              )
+              m.apps
+            |> to_list
+            |> List.concat
+          )
+      in
+      lst0 @ lst1 @ look_at e
 
 
-    let apps: 'a t -> 'a t t option =
-      fun m ->
-      Option.map (fun n -> n.apps) m
-
-
-    let find: type a. Term.t -> a t -> (subs * a) list =
+    let update: type a. Term.t -> a xt -> a t upd =
       function
       | Var _ ->
         assert false
