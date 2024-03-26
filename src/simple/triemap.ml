@@ -425,34 +425,112 @@ struct
     type 'a cont = var_keys * 'a (* content with var/keys correspondence *)
 
 
-    type 'a t =
-      {
-        pvar0: 'a cont option;   (* first occurrence of a new pattern var *)
-        pvar1: 'a cont Int_map.t;(* repeated occurrence of a pattern var  *)
-        vars:  'a cont Int_map.t;
-        apps:  'a t t option;
+    module Map =
+    struct
+      type 'a t =
+        {
+          pvar0: 'a cont option;   (* first occurrence of a new pattern var *)
+          pvar1: 'a cont Int_map.t;(* repeated occurrence of a pattern var  *)
+          vars:  'a cont Int_map.t;
+          apps:  'a t t option;
+        }
+
+
+      let empty: 'a t = {
+        pvar0 = None;
+        pvar1 = Int_map.empty;
+        vars  = Int_map.empty;
+        apps  = None
       }
 
 
-    let empty: 'a t = {
-      pvar0 = None;
-      pvar1 = Int_map.empty;
-      vars  = Int_map.empty;
-      apps  = None
-    }
+      let is_empty (m: 'a t): bool =
+        m.pvar0 = None
+        &&
+        Int_map.is_empty m.pvar1
+        &&
+        Int_map.is_empty m.vars
+        &&
+        m.apps = None
+
+    end
+
+    module FindM =
+    struct
+      type 'a res =
+        (keysub * var_keys * 'a) list
 
 
-    let is_empty (m: 'a t): bool =
-      m.pvar0 = None
-      &&
-      Int_map.is_empty m.pvar1
-      &&
-      Int_map.is_empty m.vars
-      &&
-      m.apps = None
+      type 'a t =
+        keysub -> 'a res
 
 
-    let rec find0: type a. Term.t -> keysub -> a t -> (keysub * a cont) list =
+      let return: 'a -> 'a t =
+        fun a ks -> [ks, [], a]
+
+
+      let (>>=) (m: 'a t) (f: 'a -> 'b t): 'b t =
+        fun ks ->
+        List.concat_map
+          (fun (ks, vks1, a) ->
+             List.map
+               (fun (ks, vks2, a) -> (ks, vks1 @ vks2, a))
+               (f a ks)
+          )
+          (m ks)
+
+
+      let find_vars (i: int) (m: 'a Map.t): 'a t =
+        fun ks ->
+        Option.(
+          map
+            (fun (vks, a) -> ks, vks, a)
+            (Int_map.find_opt i m.vars)
+          |>
+          to_list
+        )
+
+      let first_occurrence (e: Term.t) (map: 'a Map.t): 'a t =
+        fun ks ->
+        List.map
+          (fun (vks, a) -> Array.push e ks, vks, a)
+          (Option.to_list map.pvar0)
+
+
+      let repeated_occurrence (e: Term.t) (map: 'a Map.t): 'a t =
+        fun ks ->
+        List.filter_map
+          (fun (i, (vks, a)) ->
+             assert (i < Array.length ks);
+             if ks.(i) = e then
+               Some (ks, vks, a)
+             else
+               None
+          )
+          (Int_map.bindings map.pvar1)
+
+
+      let rec find0: type a. Term.t -> a Map.t -> a t =
+        fun e map ks ->
+        first_occurrence e map ks
+        @
+        repeated_occurrence e map ks
+        @
+        look_at e map ks
+
+
+      and look_at: type a. Term.t -> a Map.t -> a t =
+        function
+        | Var i ->
+          find_vars i
+
+        | App (_, _) ->
+          assert false
+    end
+
+    let rec find0:
+      type a. Term.t -> keysub -> a Map.t -> (keysub * a cont) list
+      =
       fun e ks m ->
       let lst0 =
         (* Terms in the map which have a first ocurrence of a pattern variable
@@ -495,9 +573,7 @@ struct
                    concat_map
                      (fun (ks, (vks1, am)) ->
                         map
-                          (fun (ks, (vks2, v)) ->
-                             ks, (vks1 @ vks2, v)
-                          )
+                          (fun (ks, (vks2, v)) -> ks, (vks1 @ vks2, v))
                           (find0 a ks am)
                      )
                      (find0 f ks fm)
@@ -511,10 +587,19 @@ struct
       lst0 @ lst1 @ look_at e
 
 
-    let update: type a. Term.t -> a xt -> a t upd =
+    let update0:
+      type a. Term.t -> (int -> int option) -> int array -> a xt -> a Map.t upd
+      =
       function
-      | Var _ ->
-        assert false
+      | Var i ->
+        (fun p pvs ->
+          match p i with
+          | None ->
+            assert false
+          | Some pv ->
+            let _ = Array.push pv pvs in
+            assert false
+        )
 
       | App (_, _) ->
         assert false
