@@ -1,8 +1,3 @@
-
-
-
-
-
 (*
 ================================================================================
 Basics
@@ -49,6 +44,15 @@ struct
     function
     | None   -> []
     | Some a -> [a]
+
+
+  let elim (def: 'r) (f: 'a -> 'r): 'a option -> 'r =
+    function
+    | None ->
+      def
+
+    | Some a ->
+      f a
 end
 
 
@@ -112,7 +116,9 @@ let de_bruijn (n: int): int upd =
 
 (*
 ================================================================================
+
 Triemap with Terms with Variables and Applications
+
 ================================================================================
 *)
 module Simple =
@@ -214,7 +220,9 @@ end
 
 (*
 ================================================================================
+
 Triemap with Terms with Binders
+
 ================================================================================
 *)
 module With_binders =
@@ -393,7 +401,9 @@ end
 
 (*
 ================================================================================
+
 Triemap with Matching
+
 ================================================================================
 *)
 
@@ -452,8 +462,8 @@ struct
         Int_map.is_empty m.vars
         &&
         m.apps = None
-
     end
+
 
     module FindM =
     struct
@@ -469,6 +479,10 @@ struct
         fun a ks -> [ks, [], a]
 
 
+      let fail: 'a t =
+        fun _ -> []
+
+
       let (>>=) (m: 'a t) (f: 'a -> 'b t): 'b t =
         fun ks ->
         List.concat_map
@@ -480,24 +494,28 @@ struct
           (m ks)
 
 
-      let find_vars (i: int) (m: 'a Map.t): 'a t =
+      let (>=>) (m1: 'a -> 'b t) (m2: 'b -> 'c t): 'a -> 'c t =
+        fun a -> m1 a >>= m2
+
+
+      let find_vars (i: int) (tm: 'a Map.t): 'a t =
         fun ks ->
         Option.(
           map
             (fun (vks, a) -> ks, vks, a)
-            (Int_map.find_opt i m.vars)
+            (Int_map.find_opt i tm.vars)
           |>
           to_list
         )
 
-      let first_occurrence (e: Term.t) (map: 'a Map.t): 'a t =
+      let first_occurrence (e: Term.t) (tm: 'a Map.t): 'a t =
         fun ks ->
         List.map
           (fun (vks, a) -> Array.push e ks, vks, a)
-          (Option.to_list map.pvar0)
+          (Option.to_list tm.pvar0)
 
 
-      let repeated_occurrence (e: Term.t) (map: 'a Map.t): 'a t =
+      let repeated_occurrence (e: Term.t) (tm: 'a Map.t): 'a t =
         fun ks ->
         List.filter_map
           (fun (i, (vks, a)) ->
@@ -507,7 +525,16 @@ struct
              else
                None
           )
-          (Int_map.bindings map.pvar1)
+          (Int_map.bindings tm.pvar1)
+
+
+      let apps (tm: 'a Map.t): 'a Map.t Map.t t =
+        match tm.apps with
+        | None ->
+          fail
+
+        | Some tm ->
+          return tm
 
 
       let rec find0: type a. Term.t -> a Map.t -> a t =
@@ -524,67 +551,9 @@ struct
         | Var i ->
           find_vars i
 
-        | App (_, _) ->
-          assert false
-    end
-
-    let rec find0:
-      type a. Term.t -> keysub -> a Map.t -> (keysub * a cont) list
-      =
-      fun e ks m ->
-      let lst0 =
-        (* Terms in the map which have a first ocurrence of a pattern variable
-           here. *)
-        Option.(
-          map
-            (fun cont -> Array.push e ks, cont)
-            m.pvar0
-          |> to_list
-        )
-
-      and lst1 =
-        (* Terms as keys in the map which have a repeated occurrence of a
-           pattern variable here. *)
-        List.filter_map
-          (fun (i, cont) ->
-             assert (i < Array.length ks);
-             if ks.(i) = e then
-               Some (ks, cont)
-             else
-               None
-          )
-          (Int_map.bindings m.pvar1)
-
-      and look_at: Term.t -> (keysub * a cont) list =
-        function
-        | Var i ->
-          Option.(
-            map
-              (fun cont -> ks, cont)
-              (Int_map.find_opt i m.vars)
-            |> to_list
-          )
-
         | App (f, a) ->
-          Option.(
-            map
-              (fun fm ->
-                 List.(
-                   concat_map
-                     (fun (ks, (vks1, am)) ->
-                        map
-                          (fun (ks, (vks2, v)) -> ks, (vks1 @ vks2, v))
-                          (find0 a ks am)
-                     )
-                     (find0 f ks fm)
-                 )
-              )
-              m.apps
-            |> to_list
-            |> List.concat
-          )
-      in
-      lst0 @ lst1 @ look_at e
+          apps >=> find0 f >=> find0 a
+    end
 
 
     let update0:
