@@ -32,27 +32,34 @@ struct
     fun a -> fab a >>= fbc
 
 
-  let get: 'a option -> 'a =
-    function
-    | None ->
-      assert false (* Illegal call *)
-
-    | Some a ->
-      a
-
   let to_list: 'a option -> 'a list =
     function
     | None   -> []
     | Some a -> [a]
+end
 
 
-  let elim (def: 'r) (f: 'a -> 'r): 'a option -> 'r =
-    function
-    | None ->
-      def
+module List =
+struct
+  include List
 
-    | Some a ->
-      f a
+  let return (a: 'a): 'a t =
+    [a]
+
+
+  let fail: 'a t =
+    []
+
+
+  let (>>=) (m: 'a t) (f: 'a -> 'b t): 'b t =
+    concat_map f m
+
+
+  let ( let* ) = (>>=)
+
+
+  let (>=>) (m1: 'a -> 'b t) (m2: 'b -> 'c t): 'a -> 'c t =
+    fun a -> m1 a >>= m2
 end
 
 
@@ -417,10 +424,6 @@ struct
   end
 
 
-  type key = int * Term.t (* number of pattern variables, term
-                             all variables above n are free variables *)
-
-
   module TMap =
   struct
     type keysub = Term.t array
@@ -485,13 +488,11 @@ struct
 
       let (>>=) (m: 'a t) (f: 'a -> 'b t): 'b t =
         fun ks ->
-        List.concat_map
-          (fun (ks, vks1, a) ->
-             List.map
-               (fun (ks, vks2, a) -> (ks, vks1 @ vks2, a))
-               (f a ks)
-          )
-          (m ks)
+        let open List
+        in
+        let* (ks1, vks1, a1) = m ks     in
+        let* (ks2, vks2, a2) = f a1 ks1 in
+        return (ks2, vks1 @ vks2, a2)
 
 
       let (>=>) (m1: 'a -> 'b t) (m2: 'b -> 'c t): 'a -> 'c t =
