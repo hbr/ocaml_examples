@@ -1,3 +1,10 @@
+(*
+ *   DOES NOT YET WORK
+ *
+ *   See bolow
+ *
+ *)
+
 module ST:
 sig
   type 'a mv
@@ -7,9 +14,9 @@ sig
   val (>>=):    'a t -> ('a -> 'b t) -> 'b t
   val ( let* ): 'a t -> ('a -> 'b t) -> 'b t
 
-  val new_var:    'a    -> 'a mv t
-  val read_var:   'a mv -> 'a t
-  val write_var:  'a mv -> 'a -> unit t
+  val var:    'a    -> 'a mv t
+  val get:   'a mv -> 'a t
+  val put:  'a mv -> 'a -> unit t
 
   val run: 'a t -> 'a
 end
@@ -34,15 +41,15 @@ struct
   let ( let* ) = (>>=)
 
 
-  let new_var (a: 'a): 'a mv t =
-    return (ref a)
+  let var (a: 'a): 'a mv t =
+    fun _ -> ref a
 
 
-  let read_var (mv: 'a mv): 'a t =
+  let get (mv: 'a mv): 'a t =
     return !mv
 
 
-  let write_var (mv: 'a mv) (a: 'a): unit t =
+  let put (mv: 'a mv) (a: 'a): unit t =
     return (mv := a)
 
 
@@ -54,20 +61,30 @@ struct
   (* Unit Test *)
 
   let swap (v1: 'a mv) (v2: 'a mv): unit t =
-    let* a = read_var v1 in
-    let* b = read_var v2 in
-    let* _ = write_var v1 b in
-    write_var v2 a
+    let* a = get v1 in
+    let* b = get v2 in
+    let* _ = put v1 b in
+    put v2 a
 
   let%test _ =
     run (
-      let* v1 = new_var 1 in
-      let* v2 = new_var 2 in
+      let* v1 = var 1 in
+      let* v2 = var 2 in
       let* _  = swap v1 v2 in
-      let* a  = read_var v1 in
-      let* b  = read_var v2 in
+      let* a  = get v1 in
+      let* b  = get v2 in
       return (a, b)
     )
     =
     (2, 1)
+
+
+  let%test _ =
+    let open Printf in
+    let v1 = run (var 1) in
+    let a  = run (get v1) in
+    let _  = run (put v1 2) in
+    let b  = run (get v1) in
+    printf "a %d, b %d\n" a b;
+    (a, b) = (1, 2)     (* WRONG!!! It should be [(1, 1)] *)
 end
