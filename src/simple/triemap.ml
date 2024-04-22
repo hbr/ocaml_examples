@@ -412,6 +412,9 @@ end
 Triemap with Matching
 
 ================================================================================
+
+
+
 *)
 
 module Simple_match =
@@ -429,22 +432,16 @@ struct
     type keysub = Term.t array
 
 
-    type 'a sub = (int * Term.t) list * 'a
-
-
-    type var_keys = (int * int) list (* pairs of variables and keys *)
-
-
-    type 'a cont = var_keys * 'a (* content with var/keys correspondence *)
+    type var_keys = (int * int) list (* pairs of pattern variables and keys *)
 
 
     module Map =
     struct
       type 'a t =
         {
-          pvar0: 'a cont option;   (* first occurrence of a new pattern var *)
-          pvar1: 'a cont Int_map.t;(* repeated occurrence of a pattern var  *)
-          vars:  'a cont Int_map.t;
+          pvar0: (var_keys * 'a) option;   (* first occurrence of a new pattern var *)
+          pvar1: (var_keys * 'a) Int_map.t;(* repeated occurrence of a pattern var  *)
+          vars:  (var_keys * 'a) Int_map.t;
           apps:  'a t t option;
         }
 
@@ -470,12 +467,8 @@ struct
 
     module FindM =
     struct
-      type 'a res =
-        (keysub * var_keys * 'a) list
-
-
       type 'a t =
-        keysub -> 'a res
+        keysub -> (keysub * var_keys * 'a) list
 
 
       let return: 'a -> 'a t =
