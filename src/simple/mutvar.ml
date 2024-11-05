@@ -80,11 +80,11 @@ struct
 
 
   let%test _ =
-    let open Printf in
+    (*let open Printf in *)
     let v1 = run (var 1) in
     let a  = run (get v1) in
     let _  = run (put v1 2) in
     let b  = run (get v1) in
-    printf "a %d, b %d\n" a b;
+    (* printf "a %d, b %d\n" a b;*)
     (a, b) = (1, 2)     (* WRONG!!! It should be [(1, 1)] *)
 end
